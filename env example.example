@@ -1,0 +1,18 @@
+# ══════════════════════════════════════
+# CREDENCIAIS — BRUNA ADORO FARM
+# ══════════════════════════════════════
+# Cole essas variáveis no Railway em:
+# Settings → Variables → Add Variable
+
+# Token da API do PagBank
+# Encontre em: PagBank → Configurações → Integrações → Token
+PAGBANK_TOKEN=seu_token_aqui
+
+# Ambiente: "sandbox" para testes, "production" para produção
+PAGBANK_ENV=production
+
+# URL do seu site (para redirecionar após pagamento)
+SITE_URL=https://brunaadorofarm.netlify.app
+
+# Porta do servidor (Railway define automaticamente)
+PORT=3000
