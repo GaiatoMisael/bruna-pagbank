@@ -10,27 +10,23 @@ const app = express();
 app.use(express.json());
 app.use(cors()); // Permite o site chamar este servidor
 
-// ── CONFIGURAÇÃO PAGBANK ──────────────────────────────
-const PAGBANK_ENV = process.env.PAGBANK_ENV || 'production';
-const PAGBANK_URL = PAGBANK_ENV === 'sandbox'
-  ? 'https://sandbox.api.pagseguro.com'
-  : 'https://api.pagseguro.com';
-
-const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
-const SITE_URL      = process.env.SITE_URL || 'https://brunaadorofarm.netlify.app';
+// ── CONFIGURAÇÃO MERCADO PAGO ─────────────────────────
+const MP_TOKEN = process.env.PAGBANK_TOKEN; // reaproveitando a variável
+const SITE_URL = process.env.SITE_URL || 'https://gaiatomisael.github.io/bruna-adoro-farm';
+const MP_URL   = 'https://api.mercadopago.com';
 
 // ── ROTA: STATUS ──────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     status: '🌸 Bruna Adoro Farm — Servidor Online!',
-    ambiente: PAGBANK_ENV,
-    versao: '1.0.0'
+    gateway: 'Mercado Pago',
+    versao: '2.0.0'
   });
 });
 
 // ── ROTA: CRIAR PEDIDO ────────────────────────────────
 // O site chama essa rota com os itens do carrinho
-// O servidor cria o pedido no PagBank e retorna o link
+// O servidor cria a preferência no Mercado Pago e retorna o link
 app.post('/criar-pedido', async (req, res) => {
   try {
     const { itens, cliente } = req.body;
@@ -43,85 +39,51 @@ app.post('/criar-pedido', async (req, res) => {
     // Calcula o total
     const total = itens.reduce((s, i) => s + (i.preco * i.quantidade), 0);
 
-    // Monta o payload para o PagBank
+    // Monta o payload para o Mercado Pago
     const payload = {
-      reference_id: `BRUNA-${Date.now()}`,
-      customer: {
-        name:  cliente?.nome  || 'Cliente Bruna Adoro Farm',
-        email: cliente?.email || 'cliente@brunaadorofarm.com',
-        tax_id: cliente?.cpf?.replace(/\D/g, '') || '00000000000',
-        phones: [{
-          country: '55',
-          area:    cliente?.telefone?.slice(0,2)  || '21',
-          number:  cliente?.telefone?.slice(2)    || '999999999',
-          type:    'MOBILE'
-        }]
-      },
-      items: itens.map((item, idx) => ({
-        reference_id: String(idx + 1),
-        name:         item.nome.substring(0, 64),
-        quantity:     item.quantidade,
-        unit_amount:  Math.round(item.preco * 100) // PagBank usa centavos
+      items: itens.map(item => ({
+        title:       item.nome,
+        quantity:    item.quantidade,
+        unit_price:  item.preco,
+        currency_id: 'BRL',
       })),
-      shipping: {
-        address: {
-          street:      'A combinar',
-          number:      '0',
-          complement:  '',
-          locality:    'Rio de Janeiro',
-          city:        'Rio de Janeiro',
-          region_code: 'RJ',
-          country:     'BRA',
-          postal_code: '20000000'
-        }
+      back_urls: {
+        success: `${SITE_URL}?pagamento=sucesso`,
+        failure: `${SITE_URL}?pagamento=erro`,
+        pending: `${SITE_URL}?pagamento=pendente`,
       },
-      notification_urls: [`${process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://'+process.env.RAILWAY_PUBLIC_DOMAIN : 'http://localhost:3000'}/notificacao`],
-      charges: [{
-        reference_id:    `CHARGE-${Date.now()}`,
-        description:     'Compra — Bruna Adoro Farm',
-        amount: {
-          value:    Math.round(total * 100),
-          currency: 'BRL'
-        },
-        payment_method: {
-          type:         'CREDIT_CARD',
-          installments: 1,
-          capture:      true
-        }
-      }],
-      redirect_url: `${SITE_URL}?pagamento=sucesso`,
-      return_url:   `${SITE_URL}?pagamento=sucesso`,
+      auto_return:          'approved',
+      statement_descriptor: 'ADORO FARM',
+      external_reference:   `BRUNA-${Date.now()}`,
     };
 
-    // Chama a API do PagBank — Checkout
+    // Chama a API do Mercado Pago — Checkout Pro
     const resposta = await axios.post(
-      `${PAGBANK_URL}/checkouts`,
+      `${MP_URL}/checkout/preferences`,
       payload,
       {
         headers: {
-          'Authorization': `Bearer ${PAGBANK_TOKEN}`,
+          'Authorization': `Bearer ${MP_TOKEN}`,
           'Content-Type':  'application/json',
-          'Accept':        'application/json'
         }
       }
     );
 
-    const checkout = resposta.data;
+    const preferencia = resposta.data;
 
     // Retorna o link de pagamento para o site
     res.json({
-      sucesso:    true,
-      checkout_id: checkout.id,
-      link:       checkout.links?.find(l => l.rel === 'PAY')?.href || checkout.links?.[0]?.href,
-      referencia: payload.reference_id,
-      total:      total
+      sucesso: true,
+      link:    preferencia.init_point, // link de produção
+      id:      preferencia.id,
+      total:   total,
     });
 
   } catch (erro) {
-    console.error('Erro PagBank:', erro.response?.data || erro.message);
+    console.error('Erro Mercado Pago:', erro.response?.data || erro.message);
     res.status(500).json({
-      erro:      'Erro ao criar pedido no PagBank',
-      detalhes:  erro.response?.data || erro.message
+      erro:     'Erro ao criar pedido no Mercado Pago',
+      detalhes: erro.response?.data || erro.message,
     });
   }
 });
